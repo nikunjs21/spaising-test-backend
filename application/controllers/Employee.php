@@ -8,7 +8,7 @@ if (isset($_SERVER['HTTP_ORIGIN'])) {
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 
 	if (isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_METHOD'])) {
-		header("Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS");
+		header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 	}
 
 	if (isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS'])) {
@@ -29,16 +29,22 @@ class Employee extends REST_Controller
 	{
 	}
 
-	public function list_get()
+	public function employee_get($id = 0)
 	{
-		$data = $this->db->select("E.*, CONCAT('" . site_url('uploads/') . "',E.image) AS image")->get('employees E')->result_array();
+		if ($id > 0) {
+			$data = $this->db
+				->select("E.*, CONCAT('" . site_url('uploads/') . "',E.image) AS image")
+				->where('E.id', $id)
+				->get('employees E')->row_array();
+		} else {
+			$data = $this->db->select("E.*, CONCAT('" . site_url('uploads/') . "',E.image) AS image")->get('employees E')->result_array();
+		}
 		$res = [
-			'error_code' => 200,
-			'status' => 'success',
-			'message' => 'Employees list',
+			'status' => true,
+			'message' => 'Data fetched successfully',
 			'data' => $data
 		];
-		echo json_encode($res);
+		$this->response($res, 200);
 	}
 
 	public function insert_post()
@@ -54,15 +60,16 @@ class Employee extends REST_Controller
 
 		if ($this->form_validation->run() == FALSE) {
 			$res = [
-				'error_code' => 400,
 				'status' => false,
 				'message' => validation_errors()
 			];
+			$error_code = 400;
 		} else {
+			$date = str_replace('/', '-', xss_clean($postdata['dob']));
 			$data = [
 				'name' => xss_clean($postdata['name']),
 				'email' => xss_clean($postdata['email']),
-				'dob' => xss_clean($postdata['dob']),
+				'dob' => date('Y-m-d', strtotime($date)),
 				'mobile' => xss_clean($postdata['mobile']),
 				'address' => xss_clean($postdata['address']),
 				'pincode' => xss_clean($postdata['pincode'])
@@ -78,36 +85,33 @@ class Employee extends REST_Controller
 					$data['image'] = $file['file_name'];
 				} else {
 					$res = [
-						'error_code' => 400,
 						'status' => false,
 						'message' => $this->upload->display_errors()
 					];
-					echo json_encode($res);
+					$this->response($res, 400);
 					exit;
 				}
 			}
 			if ($this->db->insert('employees', $data)) {
 				$res = [
-					'error_code' => 200,
 					'status' => true,
 					'message' => 'Employee added successfully'
 				];
+				$error_code = 200;
 			} else {
 				$res = [
-					'error_code' => 500,
 					'status' => false,
 					'message' => 'Insert Failed'
 				];
+				$error_code = 500;
 			}
 		}
-		echo json_encode($res);
+		$this->response($res, $error_code);
 	}
-	public function update_put()
+	public function update_post()
 	{
-		$postdata = $this->put();
-		print_r($postdata);
+		$postdata = $this->input->post();
 		$id = isset($postdata['id']) ? $postdata['id'] : 0;
-		echo $id;
 		if ($id > 0) {
 			$this->load->library('form_validation');
 			$this->form_validation->set_rules('name', "'name'", 'trim|required');
@@ -119,16 +123,16 @@ class Employee extends REST_Controller
 
 			if ($this->form_validation->run() == FALSE) {
 				$res = [
-					'error_code' => 400,
 					'status' => false,
 					'message' => validation_errors()
 				];
+				$error_code = 400;
 			} else {
-
+				$date = str_replace('/', '-', xss_clean($postdata['dob']));
 				$data = [
 					'name' => xss_clean($postdata['name']),
 					'email' => xss_clean($postdata['email']),
-					'dob' => xss_clean($postdata['dob']),
+					'dob' => date('Y-m-d', strtotime($date)),
 					'mobile' => xss_clean($postdata['mobile']),
 					'address' => xss_clean($postdata['address']),
 					'pincode' => xss_clean($postdata['pincode'])
@@ -145,62 +149,68 @@ class Employee extends REST_Controller
 						$data['image'] = $file['file_name'];
 					} else {
 						$res = [
-							'error_code' => 400,
 							'status' => false,
 							'message' => $this->upload->display_errors()
 						];
-						echo json_encode($res);
+						$this->response($res, 400);
 						exit;
 					}
 				}
 				$this->db->where('id', $id);
 				if ($this->db->update('employees', $data)) {
 					$res = [
-						'error_code' => 200,
 						'status' => true,
 						'message' => 'Employee updated successfully'
 					];
+					$error_code = 200;
 				} else {
 					$res = [
-						'error_code' => 500,
 						'status' => false,
 						'message' => 'Update Failed'
 					];
+					$error_code = 500;
 				}
 			}
 		} else {
 			$res = [
-				'error_code' => 400,
 				'status' => false,
 				'message' => 'Invalid id'
 			];
+			$error_code = 400;
 		}
-		echo json_encode($res);
+		$this->response($res, $error_code);
 	}
 	public function delete_delete($id = 0)
 	{
 		if ($id > 0) {
 			$this->db->where('id', $id);
+			$row = $this->db->get('employees')->row_array();
+
+			if (isset($row) && !empty($row['image'])) {
+				unlink('./uploads/' . $row['image']);
+			}
+
+			$this->db->where('id', $id);
 			if ($this->db->delete('employees')) {
 				$res = [
-					'error_code' => 200,
 					'status' => true,
 					'message' => 'Employee deleted successfully'
 				];
+				$error_code = 200;
 			} else {
 				$res = [
-					'error_code' => 500,
 					'status' => false,
 					'message' => 'Delete Failed'
 				];
+				$error_code = 500;
 			}
 		} else {
 			$res = [
-				'error_code' => 400,
 				'status' => false,
 				'message' => 'Invalid id'
 			];
+			$error_code = 400;
 		}
-		echo json_encode($res);
+		$this->response($res, $error_code);
 	}
 }
